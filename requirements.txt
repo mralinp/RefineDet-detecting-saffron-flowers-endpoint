@@ -1,0 +1,13 @@
+# pip install -r requirements.txt
+# For a CUDA machine (GPU VM / Colab), install a CUDA build of torch first,
+# e.g.: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# then: pip install -r requirements.txt (pip will see torch/torchvision are
+# already satisfied and only add the rest). On macOS / CPU-only machines,
+# the plain versions below already work (Apple Silicon gets MPS for free).
+torch>=2.4
+torchvision>=0.19
+numpy>=1.26
+opencv-python-headless>=4.10
+pyyaml>=6.0
+tqdm>=4.66
+matplotlib>=3.9

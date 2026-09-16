@@ -67,7 +67,7 @@ def main() -> None:
     data_root = resolve_data_root(args.data_root)
     device = get_device(args.device)
     print("=== Device ===")
-    print(device_report())
+    print(device_report(device))
     print(f"=== Data root: {data_root} ===")
 
     output_dir = Path(cfg.checkpoint_dir)

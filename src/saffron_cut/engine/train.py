@@ -118,7 +118,8 @@ def train(
         log_line = f"{log_prefix}epoch {epoch + 1}/{epochs} avg " + " ".join(f"{k}={v:.4f}" for k, v in avg.items())
 
         record = {"epoch": epoch + 1, **avg}
-        if val_pairs:
+        do_eval = val_pairs and ((epoch + 1) % cfg.eval_every == 0 or epoch == epochs - 1)
+        if do_eval:
             ap_metrics = evaluate_ap(model, cfg, val_pairs, device)
             log_line += f" val_AP={ap_metrics['ap']:.4f} P={ap_metrics['precision_at_op']:.3f} R={ap_metrics['recall_at_op']:.3f}"
             record.update({f"val_{k}": v for k, v in ap_metrics.items()})

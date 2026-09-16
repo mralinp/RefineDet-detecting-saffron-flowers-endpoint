@@ -24,7 +24,10 @@ def get_device(prefer: str | None = None) -> torch.device:
     return torch.device("cpu")
 
 
-def device_report() -> str:
+def device_report(selected: torch.device | None = None) -> str:
+    """`selected` should be the actual device in use (e.g. from
+    `get_device(args.device)`); defaults to auto-detection so this is still
+    useful before a device has been chosen."""
     lines = [
         f"cuda available : {torch.cuda.is_available()}",
         f"mps  available : {torch.backends.mps.is_available()}",
@@ -32,5 +35,5 @@ def device_report() -> str:
     if torch.cuda.is_available():
         lines.append(f"cuda device    : {torch.cuda.get_device_name(0)}")
         lines.append(f"cuda count     : {torch.cuda.device_count()}")
-    lines.append(f"selected       : {get_device()}")
+    lines.append(f"selected       : {selected if selected is not None else get_device()}")
     return "\n".join(lines)

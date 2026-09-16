@@ -46,16 +46,22 @@ class Config:
 
     # --- training ---
     batch_size: int = 4
-    epochs: int = 120
+    epochs: int = 200
     lr: float = 1e-3
     weight_decay: float = 5e-4
     momentum: float = 0.9
-    lr_warmup_iters: int = 200
-    lr_milestones: tuple[int, ...] = (80, 105)
+    # NOTE: with only ~11 labeled training images (3 iters/epoch at
+    # batch_size=4), warmup and milestones are expressed as small
+    # iteration/epoch counts, not the hundreds/thousands typical of
+    # VOC/COCO-scale training -- those numbers assume orders of magnitude
+    # more iterations per epoch and would leave this run stuck in warmup.
+    lr_warmup_iters: int = 15
+    lr_milestones: tuple[int, ...] = (140, 180)
     lr_gamma: float = 0.1
     grad_clip_norm: float = 10.0
     num_workers: int = 2
     seed: int = 0
+    eval_every: int = 5  # run validation AP every N epochs (always runs on the last epoch)
 
     # --- semi-supervised self-training (bonus step) ---
     pseudo_label_conf_thresh: float = 0.8
