@@ -67,6 +67,7 @@ def detections_for_image(
     letterbox_info,
     conf_thresh: float,
     nms_radius: float,
+    max_detections: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     keep = scores > conf_thresh
     pts, angs, scs = points_input_px[keep], angles_deg[keep], scores[keep]
@@ -75,7 +76,12 @@ def detections_for_image(
 
     pts_orig = letterbox_info.to_original(pts)
     nms_keep = radius_nms(pts_orig, scs, nms_radius)
-    return pts_orig[nms_keep], angs[nms_keep], scs[nms_keep]
+    pts_orig, angs, scs = pts_orig[nms_keep], angs[nms_keep], scs[nms_keep]
+
+    if max_detections is not None and len(scs) > max_detections:
+        top = np.argsort(-scs)[:max_detections]
+        pts_orig, angs, scs = pts_orig[top], angs[top], scs[top]
+    return pts_orig, angs, scs
 
 
 @torch.no_grad()
@@ -87,7 +93,13 @@ def predict_folder(model, cfg: Config, image_paths: list[Path], device: torch.de
         points, angles, scores = decode_batch(model, batch["image"], device)
         for i in range(len(batch["path"])):
             pts_o, angs_o, scs_o = detections_for_image(
-                points[i], angles[i], scores[i], batch["letterbox"][i], cfg.infer_conf_thresh, cfg.infer_nms_radius
+                points[i],
+                angles[i],
+                scores[i],
+                batch["letterbox"][i],
+                cfg.infer_conf_thresh,
+                cfg.infer_nms_radius,
+                cfg.infer_max_detections,
             )
             yield Path(batch["path"][i]), pts_o, angs_o, scs_o
 

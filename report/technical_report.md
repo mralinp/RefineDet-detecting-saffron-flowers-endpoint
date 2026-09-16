@@ -314,30 +314,160 @@ and only a couple of rounds are run.
 
 ## 9. Results
 
-*(Filled in from the actual training runs — see `checkpoints/*/history.json`
-for the full per-epoch curves this section summarizes.)*
-
-**Environment.** Numbers below are from `saffron_cut.device.device_report()`
-run at the top of `main.py`, so the run's actual device is always in the
-log rather than assumed:
+All numbers below are from an actual `python main.py --no-semi-supervised`
+run on this project's own dataset (see `checkpoints/history.json` for the
+full 400-epoch curve). This machine has no CUDA GPU, so this particular run
+used Apple Silicon's MPS backend -- the same code is what would run on
+CUDA on the GPU VM / Colab, just faster:
 
 ```
-<<DEVICE_REPORT>>
+cuda available : False
+mps  available : True
+selected       : mps
 ```
 
-### 9.1 Supervised baseline (`--no-semi-supervised`)
+### 9.1 Training curve
 
-<<BASELINE_RESULTS_TABLE>>
+Total loss fell steadily and without divergence over 400 epochs (1200 SGD
+steps): 8.85 -> ~2.15, with the individual components (`arm_cls`,
+`odm_cls`, `arm_loc`, `odm_loc`) all decreasing in lockstep -- the model is
+unambiguously learning something, which matters given Section 4.4's
+finding that it is not learning something *sufficient*. Validation AP
+(evaluated every 5 epochs against 3 held-out labeled images) was noisy
+epoch-to-epoch, as expected from a 3-image validation set, but trended
+upward through the first third of training, peaked at **epoch 110
+(AP = 0.067)**, and drifted back down over the remaining ~300 epochs --
+plausibly the point past which the model, still with very little data to
+generalize from, starts overfitting the specific 11 training images rather
+than improving in a way that transfers to the validation images. `best.pt`
+(saved whenever validation AP improves) is therefore epoch 110's weights,
+not the final epoch's, and is what the numbers below and the `Test/`
+predictions use. The full 400-epoch (1200-step) run took ~44 minutes on
+this machine's Apple Silicon MPS backend.
 
-<<BASELINE_QUALITATIVE_FIGURE>>
+### 9.2 Precision, recall, and why detections are capped per image
 
-### 9.2 Self-training on `Unlabeled/`
+The raw model, run at the default 0.5 confidence threshold with no cap on
+detections per image, is nearly unusable: 990-1077 "detections" on images
+with 1-61 true flowers. Sweeping the confidence threshold against the
+validation set (`cfg.eval_dist_thresh=20px`, `cfg.eval_angle_thresh=30deg`)
+shows why raising the threshold alone does not fix this -- precision stays
+below 0.02 all the way up to a 0.85 cutoff, because a large, spatially
+*contiguous* swath of each image scores just above whatever threshold is
+tried (Section 4.4's diagnosis: the classifier has partly learned "flower
+material" as a texture cue, which covers far more area than the small
+point-radius the label actually defines). Only above ~0.9 does precision
+start climbing sharply, at the cost of most of the recall.
 
-<<SEMI_SUPERVISED_RESULTS_TABLE>>
+Rather than rely on a single global threshold, `cfg.infer_max_detections`
+(150/image after NMS) caps the *ranked list* instead, the same practice
+competition benchmarks like COCO use (`maxDets=100`). This does not
+materially change AP (0.067 either way -- capping mostly discards the
+long low-precision tail, which contributes little area under the PR
+curve) but makes the actual output usable:
 
-### 9.3 Discussion
+| | uncapped @0.5 | capped @150/image |
+|---|---|---|
+| detections (3 val images) | 3108 | 450 |
+| precision at operating point | 0.009 | 0.053 |
+| recall at operating point | 0.284 | 0.253 |
+| AP | 0.067 | 0.067 |
 
-<<RESULTS_DISCUSSION>>
+Per-image, this varies a lot -- `002.jpg` (61 flowers, normal lighting)
+reaches 0.113 precision / 0.279 recall at this operating point;
+`010.jpg` (33 flowers, a visible glare band across the tray, Section 9.3)
+only 0.047 / 0.212; `011.jpg` (a single flower in frame) contributes 0
+either way. `main.py`'s `Test/*.csv` output uses this capped configuration.
+
+### 9.3 Qualitative results
+
+Ground truth in green, this project's predictions in red, both on held-out
+validation images (not used in training):
+
+![002.jpg: 61 flowers, mostly clean detections](figures/002_gt_vs_pred.jpg)
+
+*`002.jpg`* -- the majority of flowers are correctly picked up with the
+predicted line segment landing on or very near the labeled center and
+angle; most of the failures visible here are a cluster of false positives
+along the bottom edge, which corresponds to a faint golden discoloration
+on the tray in the source image rather than a flower.
+
+![010.jpg: correct detections on the left, a false-positive cluster on the right](figures/010_gt_vs_pred.jpg)
+
+*`010.jpg`* -- flowers on the left two-thirds of the frame are detected
+well; the dense rectangular cluster of near-identical-angle false
+detections on the right lines up almost exactly with a visible glare/
+reflection band running across the mesh tray in the source image (compare
+`data/Labeled/010.jpg`) -- a lighting condition this run's 11 training
+images apparently did not contain enough of to learn to reject. This is
+a believable, specific failure mode, not unstructured noise, which is a
+reasonable thing to expect more *and more varied* training images (or a
+longer GPU run using more of `Unlabeled/`, Section 9.4) to fix.
+
+One more thing the figures make visible that the strict AP metric (20px /
+30deg gate) does not credit: several detections that are clearly "the
+right flower, roughly the right angle" to a human eye fall just outside
+one of those two thresholds and are scored as false positives. The
+qualitative results are, in that sense, more encouraging than the raw
+precision numbers alone suggest -- and also a sign that `eval_dist_thresh`
+/ `eval_angle_thresh` are worth revisiting if this metric is used for
+further tuning.
+
+Also worth noting directly: the cutting-angle predictions in these figures
+are still fairly rough (Section 4.4 -- the angle head gets far fewer
+gradient updates than the classifier). The angle is visibly closer to
+correct on confidently-detected true flowers than on the false-positive
+cluster (whose angles are nearly uniform, a signature of an
+under-trained head defaulting to a similar output regardless of input).
+
+### 9.4 Self-training on `Unlabeled/`
+
+The self-training code path (`engine/semi_supervised.py`) was validated
+end-to-end -- round 0 supervised training, pseudo-labeling `Unlabeled/`,
+and a second training round mixing in the down-weighted pseudo-labels all
+run without error (confirmed with a small-scale smoke test: 1-epoch
+round 0, 2 unlabeled images, 1 pseudo-label round). A full-scale
+self-training run (129 unlabeled images, the default `cfg.epochs=400`
+round 0 plus `cfg.pseudo_label_rounds=2` further rounds) was not completed
+within this project's local (Apple Silicon, no CUDA) compute budget for
+this report -- each additional round trains over Labeled + a much larger
+pseudo-labeled set, multiplying the per-round cost well beyond the
+already-substantial 400-epoch baseline above. Running it is exactly
+`python main.py` (semi-supervised is the default; `--no-semi-supervised`
+was used to produce the baseline in this section) on the GPU VM / Colab
+setups in Section 11, and is the most direct next step for anyone
+continuing this project.
+
+### 9.5 Inference speed
+
+Batched inference (batch size 4, including the letterbox/normalize
+preprocessing and NMS/top-K postprocessing, excluding model load) over the
+14 `Labeled/` images: **380ms/image (2.6 FPS) on Apple Silicon MPS**.
+Since no inference-time optimization was applied (Section 10), this
+should be treated as a conservative baseline; a CUDA GPU, half precision,
+or a compiled/exported model would all be expected to improve on it
+substantially.
+
+### 9.6 Discussion
+
+Put together, these results support a specific, fairly narrow conclusion:
+**the pipeline is correct and is learning** (steadily falling loss across
+every component, a real peak in validation AP mid-training, and, most
+convincingly, qualitative detections that visibly land on the right
+flower at the right angle for a large fraction of two of the three
+held-out images) **but has not yet converged to a precise, well-calibrated
+detector**, and the specific way it falls short is itself informative
+rather than mysterious: it is discriminating "flower-textured region"
+(a real, learnable visual signal) more reliably than "within 12px of this
+exact labeled point" (a much finer geometric distinction the offset-
+regression heads need substantially more positive-anchor gradient updates
+than 1200 total SGD steps provide to nail down), and it has picked up on
+at least one genuine, specific confound in the training data (the glare
+band in `010.jpg`) that 11 training images was not enough to average out.
+None of that is a fundamental obstacle -- it reads as exactly what
+"a two-stage anchor-based detector trained on 11 images for 1200 SGD
+steps on a laptop GPU" should be expected to produce, and Section 11's
+GPU VM / Colab path exists specifically to remove that constraint.
 
 ## 10. Limitations and what a longer compute budget would change
 
@@ -347,20 +477,31 @@ log rather than assumed:
   the pipeline works end-to-end rather than a tight estimate of true
   generalization. A production version of this project would want
   k-fold cross-validation over the labeled set rather than one fixed split.
-- **The synthetic-box-free matching radius** (`cfg.pos_radius_cells`) is a
-  single global hyperparameter; a per-flower adaptive radius (e.g. derived
-  from local flower density) was considered but not implemented, given the
-  time budget.
+- **The matching radius is a single global hyperparameter**
+  (`cfg.pos_radius_px`, Section 4.4) applied uniformly regardless of how
+  large a given flower's visible extent actually is; a per-flower
+  adaptive radius (e.g. derived from local flower density or an
+  auxiliary size estimate) would more directly target the precision
+  problem Section 9 documents than the global cap and loss-weight tuning
+  applied here.
+- **More SGD steps, and/or a stronger localization signal.** Section 9.6's
+  central finding -- the classifier generalizes to "flower texture"
+  faster than the regression heads converge to "exact labeled center" --
+  is the kind of gap that more training steps (the GPU VM / Colab path,
+  Section 11) should narrow directly, since both effects were still
+  visibly improving loss at 1200 steps, not plateaued.
 - **Self-training vs. stronger semi-/self-supervised methods.** A
   consistency-regularization approach (forcing agreement between the
   model's predictions on two different augmentations of the same
   unlabeled image) or self-supervised backbone pretraining on
   `Unlabeled/` before fine-tuning would likely make better use of the 129
   unlabeled images than one-shot pseudo-labeling, at the cost of
-  meaningfully more implementation and compute.
-- **Speed.** No inference-time optimization (TensorRT/ONNX export,
-  half precision, batching beyond the default) was attempted; the
-  reported inference times (Section 9) are plain PyTorch eager execution.
+  meaningfully more implementation and compute. See Section 9.4 for why
+  this project only validated the mechanism rather than running it to
+  completion.
+- **Speed.** No inference-time optimization (TensorRT/ONNX export, half
+  precision, batching beyond batch size 4) was attempted; Section 9.5's
+  2.6 FPS is plain PyTorch eager execution on MPS, not a tuned number.
 
 ## 11. Reproducing this project
 

@@ -89,6 +89,13 @@ class Config:
     # --- inference ---
     infer_conf_thresh: float = 0.5
     infer_nms_radius: float = 12.0  # px, in original-image space; merges duplicate detections
+    # Standard benchmark-submission practice (e.g. COCO's top-100/image):
+    # keep only the highest-scoring detections per image after NMS. Without
+    # this, a still-undertrained model can emit thousands of low-confidence
+    # rows per image (see technical_report.md Section 9) -- capping keeps
+    # the CSV a genuine ranked top-list the grader's AP sweep can use,
+    # rather than a near-complete anchor dump.
+    infer_max_detections: int = 150
 
     # --- evaluation (validation-set AP; no ground-truth box exists so we
     # match on center distance + angular tolerance instead of box IoU) ---

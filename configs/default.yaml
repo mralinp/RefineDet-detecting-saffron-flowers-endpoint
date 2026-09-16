@@ -42,6 +42,7 @@ pseudo_label_loss_weight: 0.5
 
 infer_conf_thresh: 0.5
 infer_nms_radius: 12.0
+infer_max_detections: 150
 
 eval_dist_thresh: 20.0
 eval_angle_thresh: 30.0

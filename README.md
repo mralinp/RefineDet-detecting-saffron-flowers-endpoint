@@ -68,11 +68,26 @@ uv run python -c "from saffron_cut.device import device_report; print(device_rep
 python main.py                                 # full run: train (+ self-train on Unlabeled/) then predict Test/
 python main.py --no-semi-supervised             # supervised-only baseline, skips the Unlabeled/ bonus stage
 python main.py --set epochs=5 batch_size=2       # quick smoke test
-python main.py --mode predict --checkpoint checkpoints/round0/best.pt   # reuse a trained model
+python main.py --mode predict --checkpoint checkpoints/best.pt   # reuse a trained model (checkpoints/round0/best.pt if trained with self-training)
 ```
 
 Checkpoints and per-epoch loss/AP history land in `checkpoints/` (see
 `configs/default.yaml: checkpoint_dir`).
+
+## Watching training live
+
+Training logs per-iteration losses and, every `cfg.eval_every` epochs, a
+validation AP/precision/recall and a rendered ground-truth-vs-prediction
+image, to TensorBoard (`checkpoints/tb/`). While `main.py` is running (or
+after it finishes):
+
+```bash
+uv run tensorboard --logdir checkpoints
+# open http://localhost:6006 -- SCALARS for the loss/AP curves, IMAGES for the GT-vs-prediction snapshots
+```
+
+Same on the GPU VM / Colab -- just point `--logdir` at wherever that run's
+`checkpoints/` ended up.
 
 ## Method summary
 
@@ -90,14 +105,17 @@ Checkpoints and per-epoch loss/AP history land in `checkpoints/` (see
   `(cos angle, sin angle)`, decoded with `atan2` so there's no
   discontinuity at the 0/360 wraparound.
 - **Anchor matching**: since labels are points, not boxes, an anchor is
-  "positive" for a flower when the anchor's own center falls within one
-  grid cell of that flower (the point-detection analogue of IoU matching),
-  plus every flower's single nearest anchor is always forced positive.
-- **Losses**: 2-way cross-entropy with hard-negative mining (3:1) for both
+  "positive" for a flower when the anchor's own center falls within a
+  small, absolute-pixel-capped radius of that flower (the point-detection
+  analogue of IoU matching), plus every flower's single nearest anchor is
+  always forced positive. The cap matters -- see
+  `report/technical_report.md` Section 4.4 for a real bug this caught.
+- **Losses**: 2-way cross-entropy with hard-negative mining (5:1) for both
   ARM and ODM, ARM's "negative anchor filtering" (RefineDet's cascade
   trick: anchors ARM is already very confident are background are dropped
   from the ODM loss), SmoothL1 on both center offsets, SmoothL1 on the
-  angle vector.
+  angle vector (upweighted 3x -- it gets far fewer gradient updates than
+  the classifier).
 - **Semi-supervised bonus stage**: self-training over `Unlabeled/` --
   pseudo-label with the current model above a confidence threshold, mix
   those (down-weighted) into the next training round. See

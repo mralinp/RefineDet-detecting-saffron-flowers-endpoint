@@ -11,3 +11,4 @@ opencv-python-headless>=4.10
 pyyaml>=6.0
 tqdm>=4.66
 matplotlib>=3.9
+tensorboard>=2.21.0
