@@ -16,10 +16,19 @@ import torch
 
 
 def assign_targets(
-    centers: torch.Tensor, strides: torch.Tensor, gt_points: torch.Tensor, pos_radius_cells: float
+    centers: torch.Tensor,
+    strides: torch.Tensor,
+    gt_points: torch.Tensor,
+    pos_radius_cells: float,
+    pos_radius_px: float | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """centers: (A, 2), strides: (A,), gt_points: (G, 2).
-    Returns (pos_mask: (A,) bool, matched_gt_idx: (A,) long, -1 where unmatched)."""
+    Returns (pos_mask: (A,) bool, matched_gt_idx: (A,) long, -1 where unmatched).
+
+    The per-anchor radius is `pos_radius_cells * stride`, capped at
+    `pos_radius_px` if given -- without a cap, coarse (large-stride) levels
+    would claim almost any nearby flower as a match once the stride exceeds
+    the typical spacing between distinct objects (see config.py)."""
     num_anchors = centers.shape[0]
     device = centers.device
     if gt_points.shape[0] == 0:
@@ -30,6 +39,8 @@ def assign_targets(
 
     dist = torch.cdist(centers, gt_points)  # (A, G)
     radius = pos_radius_cells * strides  # (A,)
+    if pos_radius_px is not None:
+        radius = radius.clamp(max=pos_radius_px)
     nearest_dist, nearest_idx = dist.min(dim=1)
     pos_mask = nearest_dist < radius
     matched_idx = torch.where(pos_mask, nearest_idx, torch.full_like(nearest_idx, -1))

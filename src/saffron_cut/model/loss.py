@@ -79,7 +79,7 @@ def compute_losses(
         angs = gt_angles[b].to(device)
 
         # ---- ARM ----
-        arm_pos, arm_matched = assign_targets(anchor_centers, anchor_strides, pts, cfg.pos_radius_cells)
+        arm_pos, arm_matched = assign_targets(anchor_centers, anchor_strides, pts, cfg.pos_radius_cells, cfg.pos_radius_px)
         all_valid = torch.ones_like(arm_pos)
         arm_cls_losses.append(_hard_negative_mined_ce(outputs["arm_cls"][b], arm_pos, all_valid, cfg.neg_pos_ratio))
 
@@ -91,7 +91,7 @@ def compute_losses(
 
         # ---- ODM (matched against ARM-refined centers) ----
         refined_centers = decode_offset(anchor_centers, outputs["arm_loc"][b].detach(), anchor_strides)
-        odm_pos, odm_matched = assign_targets(refined_centers, anchor_strides, pts, cfg.pos_radius_cells)
+        odm_pos, odm_matched = assign_targets(refined_centers, anchor_strides, pts, cfg.pos_radius_cells, cfg.pos_radius_px)
 
         with torch.no_grad():
             arm_bg_score = F.softmax(outputs["arm_cls"][b], dim=-1)[:, BG]

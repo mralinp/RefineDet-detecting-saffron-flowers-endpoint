@@ -10,15 +10,16 @@ val_seed: 0
 
 feature_strides: [8, 16, 32, 64]
 pos_radius_cells: 1.0
+pos_radius_px: 12.0
 arm_neg_filter_thresh: 0.99
 arm_max_refine_shift: 32.0
 
-neg_pos_ratio: 3.0
+neg_pos_ratio: 5.0
 loc_loss_weight: 1.0
-angle_loss_weight: 1.0
+angle_loss_weight: 3.0
 
 batch_size: 4
-epochs: 200
+epochs: 400
 lr: 0.001
 weight_decay: 0.0005
 momentum: 0.9
@@ -26,7 +27,7 @@ momentum: 0.9
 # 3 iterations per epoch, so warmup/milestones are counted accordingly (see
 # the note in config.py) instead of using VOC/COCO-scale iteration counts.
 lr_warmup_iters: 15
-lr_milestones: [140, 180]
+lr_milestones: [280, 350]
 lr_gamma: 0.1
 grad_clip_norm: 10.0
 num_workers: 2

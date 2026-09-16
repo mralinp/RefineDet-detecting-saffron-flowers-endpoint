@@ -145,14 +145,65 @@ gradients flow through ARM's own loss, not through ODM's).
 ### 4.3 Losses
 
 Both ARM and ODM use 2-way (background/flower) softmax cross-entropy with
-hard-negative mining at a 3:1 negative:positive ratio (mining the
-*highest-loss* negatives, standard SSD-style practice), plus SmoothL1 on
-the center offset for positive anchors. ODM additionally applies
-SmoothL1 on the `(cos, sin)` angle vector for positive anchors, and its
+hard-negative mining at a 5:1 negative:positive ratio (mining the
+*highest-loss* negatives, standard SSD-style practice, though at a higher
+ratio than SSD/RefineDet's usual 3:1 -- see Section 4.4 for why), plus
+SmoothL1 on the center offset for positive anchors. ODM additionally
+applies SmoothL1 on the `(cos, sin)` angle vector for positive anchors
+(weighted 3x relative to the other losses -- again, Section 4.4), and its
 cross-entropy is computed only over anchors that survive **negative anchor
 filtering**: negatives ARM already scores as background with >0.99
 confidence (or whose ARM-predicted shift is implausibly large) are
 excluded from the ODM loss entirely (`model/loss.py`).
+
+### 4.4 Why precision is low: a point-radius target is smaller than what the network can actually see
+
+An anchor-matching bug was found and fixed during development, and is
+worth recording alongside the *design tension* that remained after fixing
+it, since both directly explain this project's headline results
+(Section 9).
+
+**The bug.** The match radius (Section 4.2) is `pos_radius_cells * stride`
+*per level*. At the two coarsest levels (stride 32, 64), that is a 32px or
+64px radius -- larger than the ~28px typical spacing between distinct
+flowers at network-input scale (Section 5.2's letterbox scale applied to
+the ~71.5px median nearest-neighbor spacing measured directly from
+`Labeled/*.csv`). An anchor that large essentially always has *some*
+flower within its radius, so nearly every coarse-level anchor was being
+labeled a positive match for its nearest flower, regardless of whether it
+was anywhere near a sensible location for it. The fix
+(`cfg.pos_radius_px`, `model/matching.py`) caps the radius at a fixed 12px
+regardless of level.
+
+**What that fix did not fully solve.** Even after capping the radius,
+validation-set precision stayed very low (recall was reasonable --
+roughly 0.35-0.45 -- but for every true positive there were tens of false
+positives). Loading a trained checkpoint and inspecting its raw ODM
+objectness scores directly showed why: the classifier was scoring a large,
+spatially *contiguous* fraction of each image as foreground, not a
+scattering of independent false positives. Cross-referencing against the
+source images (e.g. `data/Labeled/001.jpg`) makes the mechanism obvious --
+each flower's visible petals and stem span roughly 100-300px, far larger
+than the 12px radius around its single labeled center point. The network
+has a perfectly learnable visual cue available (purple flower material vs.
+the light mesh tray background) and, expectedly, partially learns *that*
+cue -- "this looks like flower material" -- rather than the much harder,
+almost purely geometric task the label actually asks for: "this is within
+12px of the specific point a human clicked as this flower's center."
+Telling those two things apart from local texture alone is a much finer
+discrimination than "flower vs. tray," and the offset-regression heads
+that are supposed to pull scattered nearby detections back onto the exact
+center have comparatively few positive-anchor gradient updates to learn
+from (Section 6). The `neg_pos_ratio=5` and `angle_loss_weight=3` values
+in `config.py` are direct responses to this diagnosis: more mined hard
+negatives per positive gives the classifier more of exactly the
+confusing-but-important "flower material, wrong point" examples to learn
+from, and up-weighting the angle loss compensates for it having far fewer
+positive-anchor updates than the classification loss to learn from in the
+first place. Both help, but do not eliminate the underlying tension --
+see Section 9 for the actual effect size, and Section 10 for what a much
+larger training budget (i.e. the GPU VM / Colab run this pipeline is built
+for) would plausibly change.
 
 ## 5. Data pipeline
 

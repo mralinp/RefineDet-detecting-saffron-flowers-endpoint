@@ -26,10 +26,17 @@ class Config:
     # 4 detection sources, matching RefineDet's conv4_3 / fc7 / conv6_2 / conv7_2 taps.
     feature_strides: tuple[int, ...] = (8, 16, 32, 64)
     # An anchor is a positive match for a GT flower if the anchor center lies
-    # within `pos_radius_cells * stride` pixels of the flower center (see
-    # engine/matching.py). Every GT also gets its single nearest anchor
-    # (across all levels) forced positive so no flower is ever orphaned.
+    # within `min(pos_radius_cells * stride, pos_radius_px)` pixels of the
+    # flower center (see engine/matching.py). Every GT also gets its single
+    # nearest anchor (across all levels) forced positive so no flower is
+    # ever orphaned. The absolute cap matters because flowers sit only
+    # ~28px apart at network-input scale: without it, the coarse levels
+    # (stride 32/64 -> uncapped radius 32/64px) would each anchor being
+    # "close enough" to *some* flower almost everywhere, flooding
+    # predictions with false positives (near-zero precision despite decent
+    # recall -- this is exactly what an early, uncapped run produced).
     pos_radius_cells: float = 1.0
+    pos_radius_px: float = 12.0
     # ARM background-confidence threshold above which a *negative* anchor is
     # dropped from the ODM loss entirely ("negative anchor filtering", the
     # cascade trick from the RefineDet paper).
@@ -40,9 +47,18 @@ class Config:
     arm_max_refine_shift: float = 32.0
 
     # --- loss ---
-    neg_pos_ratio: float = 3.0  # hard-negative mining ratio, both ARM and ODM
+    # Higher than SSD/RefineDet's usual 3:1: a labeled flower's *visible*
+    # extent (petals + stem) is much larger than the small positive-match
+    # radius around its labeled center, so plenty of visually flower-like
+    # anchors are legitimately hard negatives (see technical_report.md,
+    # "Why precision is low" for the empirical diagnosis).
+    neg_pos_ratio: float = 5.0  # hard-negative mining ratio, both ARM and ODM
     loc_loss_weight: float = 1.0
-    angle_loss_weight: float = 1.0
+    # The angle head only ever gets gradient from positive anchors (a small
+    # fraction of the batch, unlike cls which also gets mined negatives),
+    # so its effective learning signal is much weaker; up-weight it so it
+    # isn't drowned out by cls/loc.
+    angle_loss_weight: float = 3.0
 
     # --- training ---
     batch_size: int = 4
