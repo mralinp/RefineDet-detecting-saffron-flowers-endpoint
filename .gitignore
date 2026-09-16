@@ -1,0 +1,7 @@
+./data/*
+.env
+env
+.venv
+venv
+RefineDet
+checkpoints

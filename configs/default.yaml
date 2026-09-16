@@ -1,0 +1,45 @@
+# Default hyperparameters for the saffron center+angle RefineDet.
+# Every field here is a saffron_cut.config.Config field; anything omitted
+# falls back to that dataclass's default. Override on the CLI with
+# `--set key=value` (see main.py --help) for quick one-off experiments.
+
+data_root: "."
+input_size: 512
+val_split: 3
+val_seed: 0
+
+feature_strides: [8, 16, 32, 64]
+pos_radius_cells: 1.0
+arm_neg_filter_thresh: 0.99
+arm_max_refine_shift: 32.0
+
+neg_pos_ratio: 3.0
+loc_loss_weight: 1.0
+angle_loss_weight: 1.0
+
+batch_size: 4
+epochs: 120
+lr: 0.001
+weight_decay: 0.0005
+momentum: 0.9
+lr_warmup_iters: 200
+lr_milestones: [80, 105]
+lr_gamma: 0.1
+grad_clip_norm: 10.0
+num_workers: 2
+seed: 0
+
+pseudo_label_conf_thresh: 0.8
+pseudo_label_rounds: 2
+pseudo_label_epochs_per_round: 30
+pseudo_label_max_images: 129
+pseudo_label_loss_weight: 0.5
+
+infer_conf_thresh: 0.5
+infer_nms_radius: 12.0
+
+eval_dist_thresh: 20.0
+eval_angle_thresh: 30.0
+
+checkpoint_dir: "checkpoints"
+log_every: 10
