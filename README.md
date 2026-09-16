@@ -3,7 +3,9 @@
 Detects saffron flowers in an image and, for each one, predicts its
 **center (x, y)** and **cutting angle** (0-360 degrees) -- the course
 project's reframing of object detection: instead of a bounding box per
-object, we want a center point and an orientation.
+object, we want a center point and an orientation. The intended end use is
+a robotic arm that harvests saffron flowers, using this center+angle
+output to know where and at what angle to cut.
 
 The model is a from-scratch **PyTorch reimplementation of RefineDet**
 (Zhang et al., CVPR 2018, "Single-Shot Refinement Neural Network for
